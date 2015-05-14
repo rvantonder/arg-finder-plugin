@@ -17,11 +17,16 @@ module Cmdline = struct
       of arguments to functions" in
     Arg.(value & opt string "" & info ["outfile"] ~doc)
 
-  let process_args outfile =
-    outfile
+  let sym_outfile : string Term.t =
+    let doc = "New line separated list of functions and their
+      boundaries for which arguments were found" in
+    Arg.(value & opt string "" & info ["outfile"] ~doc)
+
+  let process_args outfile sym_outfile =
+    outfile,sym_outfile
 
   let parse argv =
-    Term.eval ~argv (Term.(pure process_args $outfile), info)
+    Term.eval ~argv (Term.(pure process_args $outfile $sym_outfile), info)
     |> function
     | `Ok x -> x
     | _ -> exit 1
@@ -35,16 +40,14 @@ let write_output output outfile =
       Out_channel.output_lines chan (output |> List.map ~f:(fun x ->
           sprintf "%x" (Word.to_int x |> ok_exn))))
 
-(*
-let write_output_syms syms_and_bounds =
+let write_output_syms syms_and_bounds outfile =
   let lines =
     List.map syms_and_bounds ~f:(fun x ->
         let sym,min,max = x in
         sprintf "%s %x %x" sym min max) in
-  let filename = Sys.getenv "OUTFILEFUN" in
+  let filename = "sym_"^outfile in
   Out_channel.with_file filename ~f:(fun chan ->
       Out_channel.output_lines chan lines)
-*)
 
 (* Retrieve the statements which populate function call arguments
  * (see comments above) *)
@@ -62,13 +65,16 @@ let get_stmts block exps =
           (mem,exp_var) :: acc else acc
       | _ -> acc)
 
+let min x =
+  Memory.min_addr x
+
 (* Gets the ABI information of a [dest_block]. The custom ABI module
  * only returns ABI information here if it's one of the funtions we
  * are interested in, e.g. strcpy *)
 let handle_dest block dest_block project parent_sym parent_mem acc =
   let res = Table.find_addr project.symbols @@ Block.addr dest_block in
   Option.fold ~init:acc res ~f:(fun acc (mem, target) ->
-      (* if the target matches strcpy and other funcs, we want to find its args *)
+      (* if the target matches strcpy, etc., we want to find its args *)
       let abi = new Custom_arm_abi.custom ~sym:target mem dest_block in
       let args = abi#args in
       if List.length args > 0 then
@@ -76,13 +82,14 @@ let handle_dest block dest_block project parent_sym parent_mem acc =
           let extract_args = List.map args ~f:snd in
           let result = get_stmts block extract_args in
           List.fold ~init:acc result ~f:(fun acc (mem,stmt) ->
-              let hex = Addr.to_int (Memory.min_addr mem) |> ok_exn in
+              let hex = Addr.to_int (min mem) |> ok_exn in
               Format.printf "%x\n" hex;
-              let st = Disasm.insn_at_addr project.disasm (Memory.min_addr mem) in
+              let st = Disasm.insn_at_addr project.disasm (min mem) in
               match st with
               | Some (mem,insn) ->
-                (* symbol, address of the arg of interest, min and max addr of this funciton *)
-                ((parent_sym, Memory.min_addr mem), (Memory.min_addr parent_mem, Memory.max_addr parent_mem)) :: acc
+                (* symbol, address of the arg of interest,
+                   min and max addr of this function *)
+                ((parent_sym, min mem), (min parent_mem, min parent_mem)) :: acc
               | None -> acc)
         end
       else acc)
@@ -110,16 +117,16 @@ let main args project =
           (* TODO needs a separate type *)
           analyze sym mem entry_block project @ acc) in
   let addrs = List.map output ~f:(fun x -> fst x |> snd) in
-(*
   let sym_and_bounds = List.map output ~f:(fun x ->
       let sym = fst x |> fst in
       let min = snd x |> fst |> Word.to_int |> ok_exn in
       let max = snd x |> snd |> Word.to_int |> ok_exn in
       (sym,min,max)) |> List.dedup in
-*)
-  let outfile = Cmdline.parse args in
-  write_output addrs outfile;
-(*   write_output_syms sym_and_bounds; *)
+  let outfile,sym_outfile = Cmdline.parse args in
+  if String.length outfile > 0 then
+    write_output addrs outfile;
+  if String.length sym_outfile > 0 then
+    write_output_syms sym_and_bounds sym_outfile;
   project
 
 let () = register_plugin_with_args  main
