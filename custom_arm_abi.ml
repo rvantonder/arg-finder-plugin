@@ -14,23 +14,8 @@ class custom ?image ?sym mem blk = object(self)
   method! return_value = Some (Bil.var ARM.CPU.r0)
   method! args =
     let vars = match sym with
-(*
-      | Some "strlen"
-      | Some "gets"
-      | Some "malloc" -> [r0]
-      | Some "snprintf"
-      | Some "strcat"
-      | Some "strcpy"
-*)
       | Some "__gets_chk"
       | Some "__printf_chk" -> [ARM.CPU.r0; ARM.CPU.r1]
-(*
-      | Some "memset"
-      | Some "fgets"
-      | Some ".sprintf" (* TODO handle varable length args *)
-      | Some "strncpy"
-      | Some "memcpy"
-*)
       | Some "__strcat_chk"
       | Some "__stpcpy_chk" -> [ARM.CPU.r0; ARM.CPU.r1; ARM.CPU.r2]
       | Some "__memmove_chk"
@@ -40,11 +25,15 @@ class custom ?image ?sym mem blk = object(self)
       | Some "__memcpy_chk"
       | Some "__mempcpy_chk"
       | Some "__memset_chk" -> [ARM.CPU.r0; ARM.CPU.r1; ARM.CPU.r2; ARM.CPU.r3]
-      | Some "__sprintf_chk" (* not sure, var args *)
-      | Some "__vsprintf_chk" -> [ARM.CPU.r0; ARM.CPU.r1; ARM.CPU.r2; ARM.CPU.r3; ARM.CPU.r4] (* actually not sure *)
-      | Some "__vsnprintf_chk" -> [ARM.CPU.r0; ARM.CPU.r1; ARM.CPU.r2; ARM.CPU.r3; ARM.CPU.r4; ARM.CPU.r5] (* var args *)
+      | Some "__sprintf_chk"
+      (* note: contains, var args *)
+      | Some "__vsprintf_chk" -> [ARM.CPU.r0; ARM.CPU.r1; ARM.CPU.r2;
+                                  ARM.CPU.r3; ARM.CPU.r4]
+      (* note: contains, var args *)
+      | Some "__vsnprintf_chk" -> [ARM.CPU.r0; ARM.CPU.r1; ARM.CPU.r2;
+                                   ARM.CPU.r3; ARM.CPU.r4; ARM.CPU.r5]
       | Some _
       | None -> [] in
-    List.map vars ~f:(fun r -> None, Bil.var r)
+    List.map vars ~f:(fun r -> sym, Bil.var r)
   method! records = [[]]
 end
